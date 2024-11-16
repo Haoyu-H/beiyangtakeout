@@ -1,5 +1,7 @@
 package com.sky.service.impl;
 
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.github.pagehelper.Page;
 import com.github.pagehelper.PageHelper;
@@ -13,6 +15,7 @@ import com.sky.exception.ShoppingCartBusinessException;
 import com.sky.mapper.*;
 import com.sky.result.PageResult;
 import com.sky.service.OrderService;
+import com.sky.utils.HttpClientUtil;
 import com.sky.utils.WeChatPayUtil;
 import com.sky.vo.OrderPaymentVO;
 import com.sky.vo.OrderStatisticsVO;
@@ -21,6 +24,7 @@ import com.sky.vo.OrderVO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
@@ -28,7 +32,9 @@ import org.springframework.util.CollectionUtils;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -49,6 +55,13 @@ public class OrderServiceImpl implements OrderService {
     @Autowired
     private UserMapper userMapper;
 
+//
+//    @Value("${sky.shop.address}")
+//    private String shopAddress;
+//    @Value("${sky.baidu.ak}")
+//    private String ak;
+//
+
     /**
      * 用户下单
      *
@@ -63,6 +76,10 @@ public class OrderServiceImpl implements OrderService {
         if (addressBook == null) {
             throw new AddressBookBusinessException(MessageConstant.ADDRESS_BOOK_IS_NULL);
         }
+
+        //检查是否超出配送范围
+//        checkOutOfRange(addressBook.getCityName()+addressBook.getDistrictName()+addressBook.getDetail());
+
 
         Long userId = BaseContext.getCurrentId();
 
@@ -334,13 +351,13 @@ public class OrderServiceImpl implements OrderService {
      */
     public PageResult conditionSearch(OrdersPageQueryDTO ordersPageQueryDTO) {
         PageHelper.startPage(ordersPageQueryDTO.getPage(), ordersPageQueryDTO.getPageSize());
-        
+
         Page<Orders> page = orderMapper.pageQuery(ordersPageQueryDTO);
-        
+
         //部分订单状态，需要额外返回订单菜品信息，将Orders转化为OrderVO
         List<OrderVO> orderVOList = getOrderVOList(page);
-        
-        return new PageResult(page.getTotal(),orderVOList);
+
+        return new PageResult(page.getTotal(), orderVOList);
     }
 
     private List<OrderVO> getOrderVOList(Page<Orders> page) {
@@ -348,15 +365,15 @@ public class OrderServiceImpl implements OrderService {
         List<OrderVO> orderVOList = new ArrayList<>();
 
         List<Orders> ordersList = page.getResult();
-        if(!CollectionUtils.isEmpty(ordersList)){
-            for(Orders orders : ordersList){
+        if (!CollectionUtils.isEmpty(ordersList)) {
+            for (Orders orders : ordersList) {
                 //根据地址簿id查出来address并将其封装到OrderVO中  （自己实现）
                 Long addressBookId = orders.getAddressBookId();
                 String address = getAddress(addressBookId);
                 orders.setAddress(address);
                 // 将共同字段复制到OrderVO
                 OrderVO orderVO = new OrderVO();
-                BeanUtils.copyProperties(orders,orderVO);
+                BeanUtils.copyProperties(orders, orderVO);
                 String orderDishes = getOrderDishesStr(orders);
 
                 //将订单菜品信息封装到orderVO中，并添加到orderVOList
@@ -385,6 +402,7 @@ public class OrderServiceImpl implements OrderService {
         // 将该订单对应的所有菜品信息拼接在一起
         return String.join("", orderDishList);
     }
+
     /**
      * 各个状态的订单数量统计
      *
@@ -481,6 +499,7 @@ public class OrderServiceImpl implements OrderService {
         orders.setCancelTime(LocalDateTime.now());
         orderMapper.update(orders);
     }
+
     /**
      * 派送订单
      *
@@ -490,7 +509,7 @@ public class OrderServiceImpl implements OrderService {
         Orders ordersDB = orderMapper.getById(id);
 
         //校验订单是否存在，并且状态为3
-        if(ordersDB == null || !ordersDB.getStatus().equals(Orders.CONFIRMED)){
+        if (ordersDB == null || !ordersDB.getStatus().equals(Orders.CONFIRMED)) {
             throw new OrderBusinessException(MessageConstant.ORDER_STATUS_ERROR);
         }
         Orders orders = new Orders();
@@ -499,17 +518,18 @@ public class OrderServiceImpl implements OrderService {
         orders.setStatus(Orders.DELIVERY_IN_PROGRESS);
         orderMapper.update(orders);
     }
+
     /**
      * 完成订单
      *
      * @param id
      */
-    public void complete(Long id){
+    public void complete(Long id) {
         //根据id查询订单
         Orders ordersDB = orderMapper.getById(id);
 
         //查询订单是否存在，并且状态为4
-        if(ordersDB == null || !ordersDB.getStatus().equals(Orders.DELIVERY_IN_PROGRESS)){
+        if (ordersDB == null || !ordersDB.getStatus().equals(Orders.DELIVERY_IN_PROGRESS)) {
             throw new OrderBusinessException(MessageConstant.ORDER_STATUS_ERROR);
         }
         Orders orders = new Orders();
@@ -520,4 +540,67 @@ public class OrderServiceImpl implements OrderService {
         orders.setDeliveryTime(LocalDateTime.now());
         orderMapper.update(orders);
     }
+
+    /**
+     *
+     * 检查客户的收货地址是否超出配送范围
+     * @param address
+     */
+//    private void checkOutOfRange(String address){
+//        Map map = new HashMap();
+//        map.put("address",shopAddress);
+//        map.put("output","json");
+//        map.put("ak",ak);
+//
+//        //获取店铺的经纬度坐标
+//        String shopCoordinate = HttpClientUtil.doGet("https://api.map.baidu.com/geocoding/v3", map);
+//
+//        JSONObject jsonObject = JSON.parseObject(shopCoordinate);
+//        if(!jsonObject.getString("status").equals("0")){
+//            throw new OrderBusinessException("店铺地址解析失败");
+//        }
+//
+//        //数据解析
+//        JSONObject location = jsonObject.getJSONObject("result").getJSONObject("location");
+//        String lat = location.getString("lat");
+//        String lng = location.getString("lng");
+//
+//        //店铺经纬度坐标
+//        String shopLngLat = lat + "," + lng;
+//
+//
+//        map.put("address",address);
+//        //获取用户收货地址的经纬度坐标
+//        String userCoordinate = HttpClientUtil.doGet("https://api.map.baidu.com/geocoding/v3", map);
+//
+//        jsonObject = JSON.parseObject(userCoordinate);
+//        if(!jsonObject.getString("status").equals("0")){
+//            throw new OrderBusinessException("收货地址解析失败");
+//        }
+//        //数据解析
+//        location = jsonObject.getJSONObject("result").getJSONObject("location");
+//        lat = location.getString("lat");
+//        lng = location.getString("lng");
+//        String userLngLat = lat + "," + lng;
+//        map.put("origin",shopLngLat);
+//        map.put("destination",userLngLat);
+//        map.put("steps_info","0");
+//
+//        //路线规划
+//        String json = HttpClientUtil.doGet("https://api.map.baidu.com/directionlite/v1/driving", map);
+//
+//        jsonObject = JSON.parseObject(json);
+//        if(!jsonObject.getString("status").equals("0")){
+//            throw new OrderBusinessException("配送路线规划失败");
+//        }
+//
+//        //数据解析
+//        JSONObject result = jsonObject.getJSONObject("result");
+//        JSONArray jsonArray = (JSONArray) result.get("routes");
+//        Integer distance = (Integer) ((JSONObject) jsonArray.get(0)).get("distance");
+//
+//        if(distance > 5000){
+//            throw new OrderBusinessException("超出配送距离");
+//        }
+//    }
 }
