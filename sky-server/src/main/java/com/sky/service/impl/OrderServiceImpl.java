@@ -21,10 +21,12 @@ import com.sky.vo.OrderPaymentVO;
 import com.sky.vo.OrderStatisticsVO;
 import com.sky.vo.OrderSubmitVO;
 import com.sky.vo.OrderVO;
+import com.sky.websocket.WebSocketServer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
@@ -55,12 +57,17 @@ public class OrderServiceImpl implements OrderService {
     @Autowired
     private UserMapper userMapper;
 
+    @Autowired
+    private WebSocketServer webSocketServer;
+
 //
 //    @Value("${sky.shop.address}")
 //    private String shopAddress;
 //    @Value("${sky.baidu.ak}")
 //    private String ak;
 //
+
+    Long id;
 
     /**
      * 用户下单
@@ -124,8 +131,17 @@ public class OrderServiceImpl implements OrderService {
                 .orderNumber(orders.getNumber())
                 .orderAmount(orders.getAmount()).build();
 
+//        //通过websocket向客户端浏览器推消息
+//        Map map = new HashMap();
+//        map.put("type",1);//
+//        map.put("orderId",orders.getId());
+//        map.put("content","订单号：" + orders.getNumber());
+//        String json = JSON.toJSONString(map);
+//        webSocketServer.sendToAllClient(json);
+        id = orders.getId();
         return orderSubmitVO;
     }
+
 
     /**
      * 订单支付
@@ -172,6 +188,14 @@ public class OrderServiceImpl implements OrderService {
         log.info("调用updateStatus，用于替换微信支付更新数据库状态的问题");
         orderMapper.updateStatus(OrderStatus, OrderPaidStatus, check_out_time, orderNumber);
 
+        //通过websocket向客户端浏览器推消息
+        Map map = new HashMap();
+        map.put("type",1);//
+        map.put("orderId",id);
+        map.put("content","订单号：" + orderNumber);
+        String json = JSON.toJSONString(map);
+        webSocketServer.sendToAllClient(json);
+
         return vo;
     }
 
@@ -194,6 +218,16 @@ public class OrderServiceImpl implements OrderService {
                 .build();
 
         orderMapper.update(orders);
+
+
+        //通过websocket向客户端浏览器推消息
+        Map map = new HashMap();
+        map.put("type",1);//
+        map.put("orderId",ordersDB.getId());
+        map.put("content","订单号：" + outTradeNo);
+        String json = JSON.toJSONString(map);
+        webSocketServer.sendToAllClient(json);
+
     }
 
     /**
